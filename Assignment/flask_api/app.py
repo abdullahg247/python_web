@@ -9,6 +9,7 @@ from services.device_repository import DeviceRepository
 from services.event_service import EventService
 from realtime.socketio_server import socketio, start_event_broadcaster
 
+
 def create_app() -> Flask:
     app = Flask(__name__)
     CORS(app)
