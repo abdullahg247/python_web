@@ -1,22 +1,21 @@
-# Network Device Status Dashboard
+# Network Device Status Dashboard (Flask)
 
-A small, production‑style project that shows a list of network devices and their live status (“Up/Down”) via a clean web UI and a mock API. It includes a **Flask** backend (with optional real‑time updates) and backend unit tests using **pytest**.
-
-> The interview brief prefers a single‑page **Django** web application for the UI *and* a **mock API** you create (Django or Flask). This repo provides the Flask API and tests; the UI can be Django (recommended) or a simple HTML client for quick verification.
+A compact **Flask** project that exposes a mock `/devices` API and a simple dashboard. It includes unit tests with **pytest** and optional **Socket.IO** real‑time updates. Everything runs locally with **no internet dependency**.
 
 ---
 
 ## ✨ Features
 
-- `/devices` mock API with `id`, `name`, `ip_address`, `status`.
-- No internet dependency; data is mocked and tests are isolated.
-- Clean project layout & `pytest` test suite (positive & negative cases).
-- Optional Socket.IO broadcast for “real-time” status updates.
-- Works on Windows, macOS, and Linux.
+- **Mock API**: `GET /devices` returns a list of devices: `{ id, name, ip_address, status }`.
+- **API Index**: `GET /` advertises available routes in JSON.
+- **Health Check**: `GET /health` returns quick service status.
+- **(Optional) Real‑time**: Socket.IO broadcasts sample `device_status` events.
+- **Clean tests**: Positive & negative paths with `pytest`.
+- **Windows/macOS/Linux** friendly.
 
 ---
 
-## 🧱 Project Structure
+## 🧱 Project Structure (expected)
 
 ```
 python_web/
@@ -29,25 +28,28 @@ python_web/
       ├─ app.py
       ├─ api/
       │  ├─ __init__.py
-      │  └─ routes.py       # /devices endpoint
+      │  └─ routes.py         # /, /devices, /health (+ optional dashboards)
       ├─ services/
       │  ├─ __init__.py
       │  └─ device_repository.py
-      ├─ realtime/          # (optional) Socket.IO server pieces
+      ├─ realtime/            # (optional) Socket.IO server
       │  ├─ __init__.py
       │  └─ socketio_server.py
       └─ tests/
          ├─ __init__.py
          ├─ conftest.py
-         └─ test_devices.py
+         ├─ test_devices.py
+         └─ test_index.py
 ```
+
+> If any folder is missing `__init__.py`, add an empty one so Python treats it as a package.
 
 ---
 
-## 🚀 Quickstart
+## 🚀 Setup
 
 ### 1) Prerequisites
-- Python 3.11+ (3.12 supported)
+- Python **3.11+** (3.12 supported)
 - Git
 
 ### 2) Create & activate a virtual environment
@@ -73,7 +75,7 @@ pip install -r requirements.txt
 
 ## ▶️ Run the API
 
-> Run as a **module** so package imports work everywhere.
+> Run as a **module** so package imports remain correct.
 
 **Option A — from the repo root (`python_web/`):**
 ```bash
@@ -86,25 +88,118 @@ cd assignment
 python -m flask_api.app
 ```
 
-### Endpoint
+- Default host/port (unless you changed it in `app.py`): `http://127.0.0.1:5000`
 
-- `GET /devices`  
-  Example response:
-  ```json
-  [
-    {"id":1,"name":"Router1","ip_address":"192.168.1.1","status":"Up"},
-    {"id":2,"name":"Switch1","ip_address":"192.168.1.2","status":"Down"},
-    {"id":3,"name":"Firewall1","ip_address":"192.168.1.3","status":"Up"}
+### Quick sanity checks (replace BASE if you changed host/port)
+```bash
+BASE=http://127.0.0.1:5000
+curl -s $BASE/ | jq .
+curl -s $BASE/health | jq .
+curl -s $BASE/devices | jq .
+```
+
+---
+
+## 🔚 Endpoints
+
+### `GET /` — API Index
+
+Returns a JSON index of available routes.
+
+**Example response (recommended: relative endpoints)**
+### Context for `GET /` — How this index is built and used
+
+**Purpose.** The API home (`/`) is a **self‑describing index** so you can quickly discover the service without external docs and verify routing is healthy.
+
+**Base URL.** The index shows **relative paths** (e.g., `/devices`) so it works on any host/port. Treat your runtime base as, for example, `http://127.0.0.1:5000`, then resolve each relative path against it.
+
+**Shape.**
+```json
+{
+  "message": "Welcome to the Device API. Here are the available routes:",
+  "routes": [
+    { "endpoint": "/",                   "methods": ["GET"] },
+    { "endpoint": "/devices",            "methods": ["GET"] },
+    { "endpoint": "/health",             "methods": ["GET"] },
+    { "endpoint": "/dashboard",          "methods": ["GET"] },
+    { "endpoint": "/realtime-dashboard", "methods": ["GET"] }
   ]
-  ```
+}
+```
 
-> The data source is mocked (no external calls). You can adjust the quantity and randomness in `services/device_repository.py`.
+**How it’s generated.** The index iterates over Flask’s `url_map`, filters out non‑public entries (like `static`), and emits only HTTP verbs relevant to clients (typically `GET`). If your implementation currently emits **absolute URLs**, either switch to `str(rule)` (relative) or normalize endpoints in tests.
+
+**Acceptance criteria (tests).**
+- `GET /` returns **200** with JSON containing `message` and a `routes` array.
+- Each `routes[i]` has:  
+  - `endpoint`: **relative path** starting with `/`  
+  - `methods`: array of HTTP verbs and must include `"GET"`
+- The index includes at least: `/`, `/devices`, `/health` (and if enabled: `/dashboard`, `/realtime-dashboard`).
+
+**Quick checks.**
+```bash
+BASE=http://127.0.0.1:5000
+curl -s $BASE/ | jq .
+curl -s $BASE/health | jq .
+curl -s $BASE/devices | jq .
+```
+
+**Optional (absolute URLs).** If you prefer absolute URLs in the index, build them with `url_for(..., _external=True)` and set `PREFERRED_URL_SCHEME` / `SERVER_NAME` in Flask config. Update tests to normalize with `urllib.parse.urlparse`.
+
+```json
+{
+  "message": "Welcome to the Device API. Here are the available routes:",
+  "routes": [
+    {"endpoint": "/",                    "methods": ["GET"]},
+    {"endpoint": "/devices",             "methods": ["GET"]},
+    {"endpoint": "/health",              "methods": ["GET"]},
+    {"endpoint": "/dashboard",           "methods": ["GET"]},
+    {"endpoint": "/realtime-dashboard",  "methods": ["GET"]}
+  ]
+}
+```
+
+> Tip: Prefer **relative** paths in the index so it stays correct across environments/ports. If you return absolute URLs, normalize them in tests.
+
+### `GET /devices` — Mock device list
+Returns JSON with fields: `id`, `name`, `ip_address`, `status` (either `"Up"` or `"Down"`). The default implementation may randomize devices via `DeviceRepository`; tests fake/patch it to be deterministic.
+
+### `GET /health` — Health check
+Returns a simple JSON status like `{"status": "ok"}`.
+
+### `GET /dashboard` — Static/simple UI (optional)
+A simple HTML page that fetches `/devices` and renders a table.
+
+### `GET /realtime-dashboard` — Live updates (optional)
+If Socket.IO is enabled, this page subscribes to `device_status` events and updates badges without refresh.
+
+---
+
+## 🔌 (Optional) Real‑time Socket.IO
+
+Minimal client snippet to verify events:
+
+```html
+<!doctype html>
+<html>
+  <body>
+    <ul id="log"></ul>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+      const log = (m)=>document.getElementById('log').insertAdjacentHTML('beforeend', `<li>${m}</li>`);
+      const socket = io("http://127.0.0.1:5000", { transports: ["websocket"] });
+      socket.on("connect", ()=>log("connected"));
+      socket.on("device_status", (evt)=>log(JSON.stringify(evt)));
+    </script>
+  </body>
+</html>
+```
 
 ---
 
 ## 🧪 Testing (pytest)
 
-### `pytest.ini` (at repo root)
+### `pytest.ini` (repo root)
 ```ini
 [pytest]
 pythonpath = assignment
@@ -116,78 +211,56 @@ testpaths = assignment/flask_api/tests
 pytest -q
 ```
 
-**Notes**
-- Tests import the app with:  
+**Test notes**
+
+- Tests import the app with:
   ```python
   from flask_api.app import create_app
   ```
-- Keep imports **consistent** inside the package, e.g.:
+- Keep imports consistent inside the package, e.g.:
   ```python
   from flask_api.api.routes import device_bp
-  # or explicit relative
+  # or explicit relative imports:
   # from .api.routes import device_bp
   ```
+- Example assertions in `test_index.py` normalize endpoints if your index returns absolute URLs.
 
----
-
-## 🔌 Optional: Real-time (Socket.IO)
-
-If enabled, the server emits periodic `device_status` updates. Minimal client to verify:
-
-```html
-<!doctype html>
-<html>
-  <body>
-    <ul id="log"></ul>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script>
-      const log = (m)=>document.getElementById('log').insertAdjacentHTML('beforeend', `<li>${m}</li>`);
-      const socket = io("http://localhost:5000", { transports: ["websocket"] });
-      socket.on("connect", ()=>log("connected"));
-      socket.on("device_status", (evt)=>log(JSON.stringify(evt)));
-    </script>
-  </body>
-</html>
-```
-
----
-
-## 🧭 (Optional) Django UI
-
-The brief expects a Django page that lists devices. If you add a Django project (e.g., `django_ui/`), document it here, e.g.:
-
+### Coverage (optional)
 ```bash
-cd django_ui
-python manage.py migrate
-python manage.py runserver 8000
+pip install pytest-cov
+pytest --cov=assignment/flask_api --cov-report=term-missing
 ```
-
-Then have the Django front end fetch from the Flask API (`http://127.0.0.1:5000/devices`) and render a simple table (Bootstrap or Material UI).
 
 ---
 
 ## 🧯 Troubleshooting
 
-- **`ModuleNotFoundError` while running tests**  
+- **`ModuleNotFoundError` while running tests**
   - Ensure `pytest.ini` is at the **repo root** with `pythonpath = assignment`.
-  - Add `__init__.py` in `assignment/` and each subfolder.
-  - Use module entry points: `python -m assignment.flask_api.app`.
+  - All package folders have `__init__.py`.
+  - Run the app as a module: `python -m assignment.flask_api.app`.
 
-- **Running `conftest.py` directly fails**  
-  - `conftest.py` is a pytest plugin; do **not** run it with `python conftest.py`. Use `pytest`.
+- **Running `conftest.py` directly fails**
+  - `conftest.py` is a pytest plugin; don’t run it with `python conftest.py`. Use `pytest`.
 
----
-
-## 📨 Submission Checklist
-
-- [x] Zip the entire project (keep `README.md` at the **repo root**).
-- [x] Include clear setup, run, and test instructions (this file).
-- [x] Ensure tests pass cleanly and do not require internet access.
+- **API index shows absolute URLs but tests expect relative**
+  - Either update the index to emit relative paths **or** normalize endpoints in tests (see `test_index.py`).
 
 ---
 
-## 📝 Tech Notes & Conventions
+## 📝 Design Notes
 
-- Prefer absolute imports within the package (`from flask_api...`) or explicit relatives (`from . ...`)—just be consistent.
-- Run time config (host/port) can be changed in `app.py` (`app.run(host="127.0.0.1", port=5000, debug=True)`).
-- For local development, a `.env` can be introduced later; not required for this mock API.
+- **App factory** (`create_app`) for isolated testing.
+- **Repository layer** for data access; easily faked in tests.
+- **Optional service layer** if logic grows (keeps routes thin).
+- **JSON‑only API** for simplicity; add global error handlers for consistent error shapes.
+- **Consistent imports** (absolute or explicit relative) to avoid path issues.
+
+---
+
+## 📦 Submission Checklist
+
+- [x] Keep `README.md` at the **repo root**.
+- [x] Include `requirements.txt` and `pytest.ini` at the root.
+- [x] Ensure tests run cleanly offline: `pytest -q`.
+- [x] Zip the entire project for hand‑off.
