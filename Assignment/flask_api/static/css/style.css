@@ -1,0 +1,4 @@
+/* Small, neat UI touches */
+.table thead th.sortable { user-select: none; }
+.table tbody tr:hover { background-color: rgba(255,255,255,0.03); }
+code { font-size: 0.95rem; }

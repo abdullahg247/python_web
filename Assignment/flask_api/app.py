@@ -1,7 +1,7 @@
 # flask_api/app.py
 from __future__ import annotations
 from pathlib import Path
-from flask import Flask, request, send_from_directory
+from flask import Flask, request, render_template
 from flask_cors import CORS
 
 from api.routes import device_bp
@@ -17,6 +17,14 @@ def create_app() -> Flask:
     # Core dependencies
     repo = DeviceRepository()
     events = EventService(repo)
+
+    @app.route("/dashboard")
+    def dashboard():
+        return render_template("index.html")
+
+    @app.route("/realtime-dashboard")
+    def realtime_page():
+        return render_template("realtime.html")
 
     @app.get("/")
     def index():
@@ -41,7 +49,7 @@ def create_app() -> Flask:
     app.register_blueprint(device_bp)
 
     # Realtime broadcaster (this kicks off the background generator)
-    start_event_broadcaster(app, events)
+    start_event_broadcaster(app)
 
     return app
 
