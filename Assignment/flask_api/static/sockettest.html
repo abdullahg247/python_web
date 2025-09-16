@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Socket.IO Test</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+  <h2>Socket.IO Test</h2>
+  <div id="status">Connecting...</div>
+  <ul id="messages"></ul>
+
+  <script>
+    // adjust port if your Flask server runs on a different one
+    const socket = io("http://localhost:8000");
+
+    const statusEl = document.getElementById("status");
+    const messagesEl = document.getElementById("messages");
+
+    socket.on("connect", () => {
+      debugger;
+      statusEl.textContent = "✅ Connected to server";
+    });
+
+    socket.on("disconnect", () => {
+      statusEl.textContent = "❌ Disconnected";
+    });
+
+    // Example: listen for your custom event (e.g., "device_status")
+    socket.on("device_status", (data) => {
+      debugger;
+      const li = document.createElement("li");
+      li.textContent = JSON.stringify(data);
+      messagesEl.appendChild(li);
+    });
+
+    // Optional: send a test event to server
+    socket.emit("client_ready", { message: "Hello from browser client!" });
+  </script>
+</body>
+</html>
