@@ -42,6 +42,10 @@ def create_app() -> Flask:
                 "methods": [m.lower() for m in methods],
             })
         return {"message": "Welcome to the Device API. Here are the available routes:", "routes": routes}, 200
+    
+    @app.route("/health")
+    def health_check():
+        return {"status": "ok"}, 200
 
    
 
